@@ -1,6 +1,7 @@
 import Web3 from "web3";
 import * as web3Utils from 'web3-utils';
 import {ERC20_BYTECODE, ERC20_ABI, LinkTokenABI, LinkTokenByteCode, OracleByteCode, OracleABI, AggregatorByteCode, AggregatorABI, AccessControlledAggregatorABI, AccessControlledAggregatorByteCode} from './bytecodes.js';
+import {getTokenBalance, sendTokens} from './helpers';
 
 import { DockAPI } from '../../src/api';
 import {getBalance} from '../../src/utils/chain-ops';
@@ -38,7 +39,7 @@ async function giveMoneyToSender(sender, amount) {
 	const addrEvm = encodeAddress(blake2AsHex(preimage));
 	console.log(addrEvm);
 	const keypair = dock.keyring.addFromUri('//Alice');
-	let amt = amount ? amount: 500540000000
+	let amt = amount || 500540000000;
 	const transfer = dock.api.tx.balances.transfer(addrEvm, amt);
 	dock.setAccount(keypair);
 	await dock.signAndSend(transfer, false);
@@ -71,32 +72,6 @@ async function deployTokenContract(signer, bytecode) {
 	return createReceipt.contractAddress;
 }
 
-async function sendTokens(contractAddress, abi, signer, to, amount) {
-	let contract = new web3.eth.Contract(abi, contractAddress);
-	const encoded = contract.methods.transfer(to, amount).encodeABI();
-
-	const transferTransaction = await signer.signTransaction(
-		{
-			to: contractAddress,
-			data: encoded,
-			value: "0x00",
-			gasPrice: "0x01",
-			gas: "0x1000000",
-		});
-	
-		const transferReceipt = await web3.eth.sendSignedTransaction(
-			transferTransaction.rawTransaction
-		);
-		console.log(
-		`Transfer executed to ${transferReceipt.to} (H: ${transferReceipt.transactionHash})`
-	);
-	return transferReceipt;
-}
-
-async function getTokenBalance(contractAddress, abi, address) {
-	let contract = new web3.eth.Contract(abi, contractAddress);
-	return contract.methods.balanceOf(address).call();
-}
 
 const main = async () => {
 
@@ -224,14 +199,14 @@ async function main2() {
 	const contractAddr = await deployTokenContract(alice, LinkTokenByteCode);
 	// const contractAddr = '0xedc6227518e0Bdc6c1D7bB2Ca1c69e9BdB92e485';
 
-	console.log(`Alice's balance ${(await getTokenBalance(contractAddr, LinkTokenABI, alice.address))}`);
-	console.log(`Bob's balance ${(await getTokenBalance(contractAddr, LinkTokenABI, bob.address))}`);
+	console.log(`Alice's balance ${(await getTokenBalance(web3, contractAddr, LinkTokenABI, alice.address))}`);
+	console.log(`Bob's balance ${(await getTokenBalance(web3, contractAddr, LinkTokenABI, bob.address))}`);
 
-	const receipt = await sendTokens(contractAddr, LinkTokenABI, alice, bob.address, value);
+	const receipt = await sendTokens(web3, contractAddr, LinkTokenABI, alice, bob.address, value);
 	// console.log(receipt);
 
-	console.log(`Alice's balance ${(await getTokenBalance(contractAddr, LinkTokenABI, alice.address))}`);
-	console.log(`Bob's balance ${(await getTokenBalance(contractAddr, LinkTokenABI, bob.address))}`);
+	console.log(`Alice's balance ${(await getTokenBalance(web3, contractAddr, LinkTokenABI, alice.address))}`);
+	console.log(`Bob's balance ${(await getTokenBalance(web3, contractAddr, LinkTokenABI, bob.address))}`);
 }
 
 async function main3() {
@@ -264,20 +239,22 @@ async function main3() {
 	const contractAddr = await deployTokenContract(alice, LinkTokenByteCode);
 	// const contractAddr = '0x8cB6497CDB9D44E168C076B414e4a675ebCC8683';
 
-	console.log(`Alice's balance ${(await getTokenBalance(contractAddr, LinkTokenABI, alice.address))}`);
-	console.log(`Bob's balance ${(await getTokenBalance(contractAddr, LinkTokenABI, bob.address))}`);
+	console.log(`Alice's balance ${(await getTokenBalance(web3, contractAddr, LinkTokenABI, alice.address))}`);
+	console.log(`Bob's balance ${(await getTokenBalance(web3, contractAddr, LinkTokenABI, bob.address))}`);
 
-	const receipt = await sendTokens(contractAddr, LinkTokenABI, alice, bob.address, web3.utils.toBN(5509));
+	const receipt = await sendTokens(web3, contractAddr, LinkTokenABI, alice, bob.address, web3.utils.toBN(5509));
 	
-	console.log(`Alice's balance ${(await getTokenBalance(contractAddr, LinkTokenABI, alice.address))}`);
-	console.log(`Bob's balance ${(await getTokenBalance(contractAddr, LinkTokenABI, bob.address))}`);
+	console.log(`Alice's balance ${(await getTokenBalance(web3, contractAddr, LinkTokenABI, alice.address))}`);
+	console.log(`Bob's balance ${(await getTokenBalance(web3, contractAddr, LinkTokenABI, bob.address))}`);
 }
 
 async function main4() {
+	// Oracle contract
 	const alice = web3.eth.accounts.privateKeyToAccount('0x348ce564d427a3311b6536bbcff9390d69395b06ed6c486954e971d960fe8709');
 	const bob = web3.eth.accounts.privateKeyToAccount('0xd7325de5c2c1cf0009fac77d3d04a9c004b038883446b065871bc3e831dcd098');
 
-	// await giveMoneyToSender(alice.address, 5000000000000)
+	// await giveMoneyToSender(alice.address, 5000000000000);
+	// await giveMoneyToSender(bob.address, 5000000000000);
 
 	const oracle = new web3.eth.Contract(OracleABI);
 	const oracleTx = oracle.deploy({
@@ -287,7 +264,7 @@ async function main4() {
 
 	console.log(`Gas needed is ${(await oracleTx.estimateGas())}`);
 
-	const createTransaction = await alice.signTransaction(
+	const createTransaction = await bob.signTransaction(
 		{
 				data: oracleTx.encodeABI(),
 				value: "0x00",
@@ -302,40 +279,41 @@ async function main4() {
 	console.log(`Contract deployed at address ${createReceipt.contractAddress}`);
 	
 	const contractAddr = createReceipt.contractAddress;
-  // const contractAddr = '0x6aa3A0e84D3D82eBdc1490C6061d70844EF20c18';
+  // const contractAddr = '0x69e5C78dAa79E5BbBe4dF6B269d77AfBC351aC90';
 
 	// console.log(`Alice's balance ${(await getTokenBalance(contractAddr, LinkTokenABI, alice.address))}`);
 	// console.log(`Bob's balance ${(await getTokenBalance(contractAddr, LinkTokenABI, bob.address))}`);
 
 	let contract = new web3.eth.Contract(OracleABI, contractAddr);
 	console.log((await contract.methods.getChainlinkToken().call()));
-	// const receipt = await sendTokens(contractAddr, LinkTokenABI, alice, bob.address, web3.utils.toBN(5509));
+	// const receipt = await sendTokens(web3, contractAddr, LinkTokenABI, alice, bob.address, web3.utils.toBN(5509));
 	
 	// console.log(`Alice's balance ${(await getTokenBalance(contractAddr, LinkTokenABI, alice.address))}`);
 	// console.log(`Bob's balance ${(await getTokenBalance(contractAddr, LinkTokenABI, bob.address))}`);
 }
 
 async function main5() {
+	// Aggregator contract
 	const alice = web3.eth.accounts.privateKeyToAccount('0x348ce564d427a3311b6536bbcff9390d69395b06ed6c486954e971d960fe8709');
 	const bob = web3.eth.accounts.privateKeyToAccount('0xd7325de5c2c1cf0009fac77d3d04a9c004b038883446b065871bc3e831dcd098');
 
-	// await giveMoneyToSender(alice.address, "50000000000000000");
+	// await giveMoneyToSender(alice.address, "500000000000000000");
+	// await giveMoneyToSender(bob.address, "500000000000000000");
 
-	/* const aggregator = new web3.eth.Contract(AggregatorABI);
+	const aggregator = new web3.eth.Contract(AggregatorABI);
 	const aggregatorTx = aggregator.deploy({
 		data: AggregatorByteCode,
 		arguments: ['0x8cB6497CDB9D44E168C076B414e4a675ebCC8683', 10, 2100, '0x0000000000000000000000000000000000000000', 3, 6, 6, "Dock USD price feed"],
-	}); */
-	// console.log(`Gas needed is ${(await aggregatorTx.estimateGas())}`);
+	});
+	console.log(`Gas needed is ${(await aggregatorTx.estimateGas())}`);
 	// console.log(`Contract deployed at address ${aggregatorTx.options.address}`);
 
-	/* const argsABI = web3.eth.abi.encodeParameters(['address', 'uint128', 'uint32', 'address', 'int256','int256', 'int8', 'string'], ['0x8cB6497CDB9D44E168C076B414e4a675ebCC8683', 10, 2100, '0x0000000000000000000000000000000000000000', 3, 6, 6, "Dock USD price feed"]);
+	const argsABI = web3.eth.abi.encodeParameters(['address', 'uint128', 'uint32', 'address', 'int256','int256', 'int8', 'string'], ['0x8cB6497CDB9D44E168C076B414e4a675ebCC8683', 10, 2100, '0x0000000000000000000000000000000000000000', 3, 6, 6, "Dock USD price feed"]);
 	
-
 	const createTransaction = await alice.signTransaction(
 		{
 				data: AggregatorByteCode + argsABI.slice(2),
-				value: "0x00",
+				value: "0x100",
 				gasPrice: "0x01",
 				gas: "0x1600000",
 		}
@@ -345,9 +323,9 @@ async function main5() {
 	);
 	console.log(`Contract deployed at address ${createReceipt.contractAddress}`);
 
-	const contractAddr = createReceipt.contractAddress; */
+	const contractAddr = createReceipt.contractAddress;
 
-	const contractAddr = '0xc11696c19ba6e2741Dda4d44F40625469dd9fc3D';
+	// const contractAddr = '0xc11696c19ba6e2741Dda4d44F40625469dd9fc3D';
 
 	let contract = new web3.eth.Contract(AggregatorABI, contractAddr);
 	console.log((await contract.methods.getOracles().call()));
@@ -357,15 +335,15 @@ async function main6() {
 	const alice = web3.eth.accounts.privateKeyToAccount('0x348ce564d427a3311b6536bbcff9390d69395b06ed6c486954e971d960fe8709');
 	const bob = web3.eth.accounts.privateKeyToAccount('0xd7325de5c2c1cf0009fac77d3d04a9c004b038883446b065871bc3e831dcd098');
 
-	/* const aggregator = new web3.eth.Contract(AccessControlledAggregatorABI);
-	const aggregatorTx = aggregator.deploy({
-		data: AccessControlledAggregatorByteCode,
-		arguments: ['0x8cB6497CDB9D44E168C076B414e4a675ebCC8683', 10, 2100, '0x0000000000000000000000000000000000000000', 3, 6, 6, "Dock USD price feed"],
-	});
+	// const aggregator = new web3.eth.Contract(AccessControlledAggregatorABI);
+	// const aggregatorTx = aggregator.deploy({
+	// 	data: AccessControlledAggregatorByteCode,
+	// 	arguments: ['0x8cB6497CDB9D44E168C076B414e4a675ebCC8683', 10, 2100, '0x0000000000000000000000000000000000000000', 3, 6, 6, "Dock USD price feed"],
+	// });
 	// console.log(`Gas needed is ${(await aggregatorTx.estimateGas())}`);
 	// console.log(`Contract deployed at address ${aggregatorTx.options.address}`);
 
-	const argsABI = web3.eth.abi.encodeParameters(['address', 'uint128', 'uint32', 'address', 'int256','int256', 'int8', 'string'], ['0x8cB6497CDB9D44E168C076B414e4a675ebCC8683', 10, 2100, '0x0000000000000000000000000000000000000000', 3, 6, 6, "Dock USD price feed"]);
+	/* const argsABI = web3.eth.abi.encodeParameters(['address', 'uint128', 'uint32', 'address', 'int256','int256', 'int8', 'string'], ['0x8cB6497CDB9D44E168C076B414e4a675ebCC8683', 10, 120, '0x0000000000000000000000000000000000000000', 0, 50000, 6, "Dock USD price feed"]);
 	
 
 	const createTransaction = await alice.signTransaction(
@@ -383,12 +361,19 @@ async function main6() {
 
 	const contractAddr = createReceipt.contractAddress; */
 
-	// const contractAddr = '0xa8F3e277740b7c40Ab684cB1b69F69159EF592f6';
+	const contractAddr = '0x6677AE2e2Cc985446d42a5BDeE182702e85E8587';
 
 	let contract = new web3.eth.Contract(AggregatorABI, contractAddr);
 	console.log((await contract.methods.getOracles().call()));
 }
 
-main6().catch((err) => {
+async function main7() {
+	const alice = web3.eth.accounts.privateKeyToAccount('0x348ce564d427a3311b6536bbcff9390d69395b06ed6c486954e971d960fe8709');
+	const bob = web3.eth.accounts.privateKeyToAccount('0xd7325de5c2c1cf0009fac77d3d04a9c004b038883446b065871bc3e831dcd098');
+
+	const receipt = await sendTokens(web3, '0x8cB6497CDB9D44E168C076B414e4a675ebCC8683', LinkTokenABI, alice, '0x6677AE2e2Cc985446d42a5BDeE182702e85E8587', web3.utils.toBN(100000));
+}
+
+main7().catch((err) => {
 	console.log("Error", err);
 });
